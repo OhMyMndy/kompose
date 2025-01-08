@@ -42,8 +42,7 @@ import (
 var StdinData []byte
 
 // Compose is docker compose file loader, implements Loader interface
-type Compose struct {
-}
+type Compose struct{}
 
 // checkUnsupportedKey checks if compose-go project contains
 // keys that are not supported by this loader.
@@ -54,7 +53,7 @@ func checkUnsupportedKey(composeProject *types.Project) []string {
 	// this is map to make searching for keys easier
 	// to make sure that unsupported key is not going to be reported twice
 	// by keeping record if already saw this key in another service
-	var unsupportedKey = map[string]bool{
+	unsupportedKey := map[string]bool{
 		"CgroupParent":  false,
 		"CPUSet":        false,
 		"CPUShares":     false,
@@ -113,7 +112,7 @@ func checkUnsupportedKey(composeProject *types.Project) []string {
 							continue
 						}
 					}
-					//get yaml tag name instead of variable name
+					// get yaml tag name instead of variable name
 					yamlTagName := strings.Split(f.Tag("yaml"), ",")[0]
 					if f.Name() == "Networks" {
 						// networks always contains one default element, even it isn't declared in compose v2.
@@ -124,7 +123,7 @@ func checkUnsupportedKey(composeProject *types.Project) []string {
 					}
 
 					if linksArray := val.FieldByName(f.Name()); f.Name() == "Links" && linksArray.Kind() == reflect.Slice {
-						//Links has "SERVICE:ALIAS" style, we don't support SERVICE != ALIAS
+						// Links has "SERVICE:ALIAS" style, we don't support SERVICE != ALIAS
 						findUnsupportedLinksFlag := false
 						for i := 0; i < linksArray.Len(); i++ {
 							if tmpLink := linksArray.Index(i); tmpLink.Kind() == reflect.String {
@@ -543,7 +542,7 @@ func dockerComposeToKomposeMapping(composeObject *types.Project) (kobject.Kompos
 		}
 
 		// HealthCheck Readiness
-		var readiness, errReadiness = parseHealthCheckReadiness(composeServiceConfig.Labels)
+		readiness, errReadiness := parseHealthCheckReadiness(composeServiceConfig.Labels)
 		if !readiness.Disable {
 			serviceConfig.HealthChecks.Readiness = readiness
 			if errReadiness != nil {
@@ -618,7 +617,7 @@ func parseNetwork(composeServiceConfig *types.ServiceConfig, serviceConfig *kobj
 			serviceConfig.Network = append(serviceConfig.Network, normalizedNetworkName)
 		}
 	} else {
-		var alias = ""
+		alias := ""
 		for key := range composeServiceConfig.Networks {
 			alias = key
 			netName := composeObject.Networks[alias].Name
@@ -729,7 +728,6 @@ func handleCronJobSchedule(schedule string) (string, error) {
 	}
 
 	return schedule, nil
-
 }
 
 // parseKomposeLabels parse kompose labels, also do some validation
@@ -800,6 +798,8 @@ func parseKomposeLabels(labels map[string]string, serviceConfig *kobject.Service
 			// generate a valid k8s resource name
 			normalizedName := normalizeServiceNames(value)
 			serviceConfig.Name = normalizedName
+		case LabelEnvironmentSecrets:
+			serviceConfig.EnvironmentSecrets = value // strings.Split(value, ",")
 		default:
 			serviceConfig.Labels[key] = value
 		}
@@ -840,14 +840,14 @@ func handleVolume(komposeObject *kobject.KomposeObject, volumes *types.Volumes) 
 			size, selector := getVolumeLabels(vol.VolumeName, volumes)
 			if len(size) > 0 || len(selector) > 0 {
 				// We can't assign value to struct field in map while iterating over it, so temporary variable `temp` is used here
-				var temp = vols[volName]
+				temp := vols[volName]
 				temp.PVCSize = size
 				temp.SelectorValue = selector
 				vols[volName] = temp
 			}
 		}
 		// We can't assign value to struct field in map while iterating over it, so temporary variable `temp` is used here
-		var temp = komposeObject.ServiceConfigs[name]
+		temp := komposeObject.ServiceConfigs[name]
 		temp.Volumes = vols
 		komposeObject.ServiceConfigs[name] = temp
 	}

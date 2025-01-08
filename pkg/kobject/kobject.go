@@ -109,6 +109,7 @@ type ServiceConfig struct {
 	ContainerName                 string
 	Image                         string             `compose:"image"`
 	Environment                   []EnvVar           `compose:"environment"`
+	EnvironmentSecrets            string             `compose:"kompose.environment.secrets"`
 	EnvFile                       []string           `compose:"env_file"`
 	Port                          []Ports            `compose:"ports"`
 	Command                       []string           `compose:"command"`
@@ -171,9 +172,9 @@ type ServiceConfig struct {
 	Secrets                  []types.ServiceSecretConfig
 	HealthChecks             HealthChecks `compose:""`
 	Placement                Placement    `compose:""`
-	//This is for long LONG SYNTAX link(https://docs.docker.com/compose/compose-file/#long-syntax)
+	// This is for long LONG SYNTAX link(https://docs.docker.com/compose/compose-file/#long-syntax)
 	Configs []types.ServiceConfigObjConfig `compose:""`
-	//This is for SHORT SYNTAX link(https://docs.docker.com/compose/compose-file/#configs)
+	// This is for SHORT SYNTAX link(https://docs.docker.com/compose/compose-file/#configs)
 	ConfigsMetaData types.Configs `compose:""`
 
 	WithKomposeAnnotation bool `compose:""`

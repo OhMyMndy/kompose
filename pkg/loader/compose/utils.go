@@ -103,7 +103,8 @@ const (
 	// LabelHpaMemory defines scaling decisions based on memory utilization
 	LabelHpaMemory = "kompose.hpa.memory"
 	// LabelNameOverride defines the override resource name
-	LabelNameOverride = "kompose.service.name_override"
+	LabelNameOverride       = "kompose.service.name_override"
+	LabelEnvironmentSecrets = "kompose.environment.secrets"
 	// LabelExposeContainerToHost defines whether to expose container to host or not using hostPort
 	LabelExposeContainerToHost = "kompose.controller.port.expose"
 )

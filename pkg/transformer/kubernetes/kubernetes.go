@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -97,7 +98,7 @@ func (k *Kubernetes) CheckUnsupportedKey(komposeObject *kobject.KomposeObject, u
 							continue
 						}
 					}
-					//get tag from kobject service configure
+					// get tag from kobject service configure
 					tag := f.Tag(komposeObject.LoadedFrom)
 					keysFound = append(keysFound, tag)
 					unsupportedKey[f.Name()] = true
@@ -406,7 +407,7 @@ func (k *Kubernetes) InitD(name string, service kobject.ServiceConfig, replicas 
 			},
 			Template: api.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					//Labels: transformer.ConfigLabels(name),
+					// Labels: transformer.ConfigLabels(name),
 					Annotations: transformer.ConfigAnnotations(service),
 				},
 				Spec: podSpec,
@@ -594,11 +595,18 @@ func (k *Kubernetes) initIngress(name string, service kobject.ServiceConfig, por
 func (k *Kubernetes) CreateSecrets(komposeObject kobject.KomposeObject) ([]*api.Secret, error) {
 	var objects []*api.Secret
 	for name, config := range komposeObject.Secrets {
-		if config.File != "" {
-			dataString, err := GetContentFromFile(config.File)
-			if err != nil {
-				log.Fatal("unable to read secret from file: ", config.File)
-				return nil, err
+		var dataString string
+		var err error
+		if config.File != "" || config.Content != "" {
+			if config.File != "" {
+				dataString, err = GetContentFromFile(config.File)
+				if err != nil {
+					log.Fatal("unable to read secret from file: ", config.File)
+					return nil, err
+				}
+
+			} else if config.Content != "" {
+				dataString = config.Content
 			}
 			data := []byte(dataString)
 			resourceName := FormatResourceName(name)
@@ -779,12 +787,12 @@ func ConfigCapabilities(service kobject.ServiceConfig) *api.Capabilities {
 
 // ConfigTmpfs configure the tmpfs.
 func (k *Kubernetes) ConfigTmpfs(name string, service kobject.ServiceConfig) ([]api.VolumeMount, []api.Volume) {
-	//initializing volumemounts and volumes
+	// initializing volumemounts and volumes
 	volumeMounts := []api.VolumeMount{}
 	volumes := []api.Volume{}
 
 	for index, volume := range service.TmpFs {
-		//naming volumes if multiple tmpfs are provided
+		// naming volumes if multiple tmpfs are provided
 		volumeName := fmt.Sprintf("%s-tmpfs%d", name, index)
 		volume = strings.Split(volume, ":")[0]
 		// create a new volume mount object and append to list
@@ -794,7 +802,7 @@ func (k *Kubernetes) ConfigTmpfs(name string, service kobject.ServiceConfig) ([]
 		}
 		volumeMounts = append(volumeMounts, volMount)
 
-		//create tmpfs specific empty volumes
+		// create tmpfs specific empty volumes
 		volSource := k.ConfigEmptyVolumeSource("tmpfs")
 
 		// create a new volume object using the volsource and add to list
@@ -900,7 +908,7 @@ func (k *Kubernetes) getSecretPathsLegacy(secretConfig types.ServiceSecretConfig
 	// See https://github.com/kubernetes/kompose/issues/1280 for more details.
 
 	var itemPath string // should be the filename
-	var mountPath = ""  // should be the directory
+	mountPath := ""     // should be the directory
 	// if is used the short-syntax
 	if secretConfig.Target == "" {
 		// the secret path (mountPath) should be inside the default directory /run/secrets
@@ -973,7 +981,7 @@ func (k *Kubernetes) ConfigVolumes(name string, service kobject.ServiceConfig) (
 
 	var count int
 	skip := false
-	//iterating over array of `Vols` struct as it contains all necessary information about volumes
+	// iterating over array of `Vols` struct as it contains all necessary information about volumes
 	for _, volume := range service.Volumes {
 		// check if ro/rw mode is defined, default rw
 		readonly := len(volume.Mode) > 0 && (volume.Mode == "ro" || volume.Mode == "rox")
@@ -1056,7 +1064,6 @@ func (k *Kubernetes) ConfigVolumes(name string, service kobject.ServiceConfig) (
 				}
 
 				createdPVC, err := k.CreatePVC(volumeName, volume.Mode, defaultSize, volume.SelectorValue, storageClassName)
-
 				if err != nil {
 					return nil, nil, nil, nil, errors.Wrap(err, "k.CreatePVC failed")
 				}
@@ -1087,14 +1094,14 @@ func (k *Kubernetes) ConfigVolumes(name string, service kobject.ServiceConfig) (
 // ConfigEmptyVolumeSource is helper function to create an EmptyDir api.VolumeSource
 // either for Tmpfs or for emptyvolumes
 func (k *Kubernetes) ConfigEmptyVolumeSource(key string) *api.VolumeSource {
-	//if key is tmpfs
+	// if key is tmpfs
 	if key == "tmpfs" {
 		return &api.VolumeSource{
 			EmptyDir: &api.EmptyDirVolumeSource{Medium: api.StorageMediumMemory},
 		}
 	}
 
-	//if key is volume
+	// if key is volume
 	return &api.VolumeSource{
 		EmptyDir: &api.EmptyDirVolumeSource{},
 	}
@@ -1186,7 +1193,8 @@ func ConfigEnvs(service kobject.ServiceConfig, opt kobject.ConvertOptions) ([]ap
 								Name: envName,
 							},
 							Key: k,
-						}},
+						},
+					},
 				})
 				keysFromEnvFile[k] = true
 			}
@@ -1199,10 +1207,23 @@ func ConfigEnvs(service kobject.ServiceConfig, opt kobject.ConvertOptions) ([]ap
 			if strings.Contains(v.Value, "run/secrets") {
 				v.Value = FormatResourceName(v.Value)
 			}
-			envs = append(envs, api.EnvVar{
-				Name:  v.Name,
-				Value: v.Value,
-			})
+			environmentSecrets := strings.Split(service.EnvironmentSecrets, ",")
+			if slices.Contains(environmentSecrets, v.Name) {
+				envs = append(envs, api.EnvVar{
+					Name: v.Name,
+					ValueFrom: &api.EnvVarSource{
+						SecretKeyRef: &api.SecretKeySelector{
+							LocalObjectReference: api.LocalObjectReference{Name: FormatResourceName(v.Name)},
+							Key:                  FormatResourceName(v.Name),
+						},
+					},
+				})
+			} else {
+				envs = append(envs, api.EnvVar{
+					Name:  v.Name,
+					Value: v.Value,
+				})
+			}
 		}
 	}
 
@@ -1293,7 +1314,7 @@ func (k *Kubernetes) CreateWorkloadAndConfigMapObjects(name string, service kobj
 
 	// Check to see if Compose v3 Deploy.Mode has been set to "global"
 	if service.DeployMode == "global" {
-		//default use daemonset
+		// default use daemonset
 		if opt.Controller == "" {
 			opt.CreateD = false
 			opt.CreateDS = true
@@ -1302,7 +1323,7 @@ func (k *Kubernetes) CreateWorkloadAndConfigMapObjects(name string, service kobj
 		}
 	}
 
-	//Resolve labels first
+	// Resolve labels first
 	if val, ok := service.Labels[compose.LabelControllerType]; ok {
 		opt.CreateD = false
 		opt.CreateDS = false
@@ -1394,7 +1415,7 @@ func (k *Kubernetes) CreateNetworkPolicy(networkName string) (*networkingv1.Netw
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: networkName,
-			//Labels: transformer.ConfigLabels(name)(name),
+			// Labels: transformer.ConfigLabels(name)(name),
 		},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{
@@ -1506,7 +1527,6 @@ func (k *Kubernetes) configNetworkPolicyForService(service kobject.ServiceConfig
 		for _, net := range service.Network {
 			log.Infof("Network %s is detected at Source, shall be converted to equivalent NetworkPolicy at Destination", net)
 			np, err := k.CreateNetworkPolicy(net)
-
 			if err != nil {
 				return errors.Wrapf(err, "Unable to create Network Policy for network %v for service %v", net, name)
 			}

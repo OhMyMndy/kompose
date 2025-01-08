@@ -18,6 +18,7 @@ package app
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -25,8 +26,7 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	"os"
-
+	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/kubernetes/kompose/pkg/kobject"
 	"github.com/kubernetes/kompose/pkg/loader"
 	"github.com/kubernetes/kompose/pkg/transformer"
@@ -34,15 +34,13 @@ import (
 	"github.com/kubernetes/kompose/pkg/transformer/openshift"
 )
 
-var (
-	// DefaultComposeFiles is a list of filenames that kompose will use if no file is explicitly set
-	DefaultComposeFiles = []string{
-		"compose.yaml",
-		"compose.yml",
-		"docker-compose.yaml",
-		"docker-compose.yml",
-	}
-)
+// DefaultComposeFiles is a list of filenames that kompose will use if no file is explicitly set
+var DefaultComposeFiles = []string{
+	"compose.yaml",
+	"compose.yml",
+	"docker-compose.yaml",
+	"docker-compose.yml",
+}
 
 const (
 	// ProviderKubernetes is provider kubernetes
@@ -225,6 +223,8 @@ func Convert(opt kobject.ConvertOptions) ([]runtime.Object, error) {
 
 	komposeObject.Namespace = opt.Namespace
 
+	komposeObject.Secrets = make(types.Secrets)
+
 	// Get the directory of the compose file
 	workDir, err := transformer.GetComposeFileDir(opt.InputFiles)
 	if err != nil {
@@ -233,6 +233,16 @@ func Convert(opt kobject.ConvertOptions) ([]runtime.Object, error) {
 
 	// convert env_file from absolute to relative path
 	for _, service := range komposeObject.ServiceConfigs {
+		environmentSecrets := strings.Split(service.EnvironmentSecrets, ",")
+		for _, envKey := range environmentSecrets {
+			var envValue string
+			for _, env := range service.Environment {
+				if env.Name == envKey {
+					envValue = env.Value
+				}
+			}
+			komposeObject.Secrets[envKey] = types.SecretConfig{Name: envKey, Content: envValue}
+		}
 		if len(service.EnvFile) <= 0 {
 			continue
 		}
@@ -255,7 +265,6 @@ func Convert(opt kobject.ConvertOptions) ([]runtime.Object, error) {
 
 	// Do the transformation
 	objects, err := t.Transform(komposeObject, opt)
-
 	if err != nil {
 		log.Fatalf(err.Error())
 	}
